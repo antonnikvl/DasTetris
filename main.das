@@ -1,7 +1,6 @@
 require daslib/media
 require graphics
 require dasbox
-require daslib/decs_boost
 // options debugger            // uncomment for debug in VS Code
 // require daslib/debug        // uncomment for debug in VS Code
 
@@ -62,13 +61,15 @@ let quad_size = 30
 let offset = 2
 let field_pos_x = 10
 let field_pos_y = 10
-var field_height = 20
+let field_height = 20
 let field_width = 10
 
 let next_field_pos_x = 400
 let next_field_pos_y = 10
-var next_field_height = 5
+let next_field_height = 5
 let next_field_width = 5
+
+var field: array<array<uint>>
 
 def compute_border_color(c: uint)
     var result = c & (0xFF << 24u)
@@ -77,16 +78,32 @@ def compute_border_color(c: uint)
         result |= ((c & k) / 2u) & k
     return result
 
-def draw_field(x: int; y: int; w: int; h: int)
+def draw_field(main: bool = true)
+    var w, h, x, y: int
+    if main
+        w = field_width
+        h = field_height
+        x = field_pos_x
+        y = field_pos_y
+    else
+        w = next_field_width
+        h = next_field_height
+        x = next_field_pos_x
+        y = next_field_pos_y
     let sz_x = quad_size * w + offset * (w + 1)
     let sz_y = quad_size * h + offset * (h + 1)
     fill_rect(x, y, sz_x, sz_y, background_color)
     for i in range(w)
         for j in range(h)
+            var border_color = cell_border_color
+            var quad_color = background_color
+            if main && (field[i][j] != 0u)
+                quad_color = field[i][j]
+                border_color = compute_border_color(quad_color)
             draw_quad_with_border(x + offset + i * (offset + quad_size),
                                   y + offset + j * (offset + quad_size),
-                                  quad_size, r, background_color, offset,
-                                  cell_border_color)
+                                  quad_size, r, quad_color, offset,
+                                  border_color)
                                 //   compute_border_color(background_color))
 
 def apply_per_figure_part(x: int; y: int; fig_type: int; rot: int;
@@ -139,7 +156,6 @@ var leftPressed = false
 
 var seed = random_seed(42)
 
-[decs_template]
 struct Figure 
     fig_type: int
     rotation: int
@@ -147,79 +163,77 @@ struct Figure
     y: int
     color: uint
     time_till_move: float
-    active: bool
-    next: bool
 
+var active, next: Figure
+var first_time = true;
 
 def make_figure()
-    var figure_id = create_entity <| @ ( eid, cmp )
-        cmp |> set ("eid", eid )
-        cmp |> set ("fig_type", random_int(seed) % length(figures))
-        cmp |> set ("rotation", random_int(seed) % 4)
-        cmp |> set ("x", random_int(seed) % 7)
-        cmp |> set ("y", field_height)
-        cmp |> set ("color", (0xFF000000 | uint(random_int(seed)) & 0xFFFFFF))
-        cmp |> set ("time_till_move", 1.0)
-        cmp |> set ("active", false)
-        cmp |> set ("next", true)
-        apply_decs_template(cmp, [[Figure]])
+    swap(active, next)
+    next.fig_type = random_int(seed) % length(figures)
+    next.rotation = random_int(seed) % 4
+    next.x = random_int(seed) % 7
+    next.y = 0
+    next.color = 0xFF00000
+    next.color |= (uint(random_int(seed)) & 0xFF) << 0u;
+    next.color |= (uint(random_int(seed)) & 0xFF) << 8u;
+    next.color |= (uint(random_int(seed)) & 0xFF) << 16u;
+    next.time_till_move = 1.0
 
 def create_figure()
-    query <| $(var next : bool&; var active : bool&)
-        if next
-            active = true
-            next = false
+    if first_time
+        make_figure()
+        make_figure()
+        first_time = false
     make_figure()
-
-[decs(stage=init)]
-def clear_all(eid:EntityId)
-    delete_entity(eid)
 
 [export]
 def initialize
     set_window_title("Tetris")
-    decs_stage("init")
+    create_figure()
+    for i in range(field_width)
+        var v: array<uint>
+        for j in range(field_height)
+            push(v, 0u)
+        emplace(field, v)
     return
+
+def clear_all()
+    for i in range(field_width)
+        for j in range(field_height)
+            field[i][j] = 0u
+    first_time = true
+    create_figure()
 
 def check_collision(xx: int; yy: int; t: int; r: int)
     var collides = false
     unsafe
         let border_checker <- @ <| [[&collides]] (i:int; j:int) : void
-            collides ||= (j < 0) || (i < 0) || (i > field_width-1)
+            collides ||= (j < 0) || (i < 0) || (i > field_width-1) || (j > field_height - 1)
+            if (j >= 0) && (i >= 0) && (i <= field_width-1) && (j <= field_height - 1)
+                collides ||= field[i][j] != 0u
         apply_per_figure_part(xx, yy, t, r, border_checker)
-        if collides
-            return true
-        let checker <- @ <| [[&collides]] (i:int; j:int) : void
-            let checker_int <- @ <| [[&collides]] (u:int; v:int) : void
-                collides ||= (u == i) && (v == j)
-            apply_per_figure_part(xx, yy, t, r, checker_int)
-        query <| $ (x: int; y: int; rotation: int; fig_type: int; active: bool; next: bool)
-            if (!active) && (!next)
-                apply_per_figure_part(x, y, fig_type, rotation, checker)
     return collides
 
-[decs(stage=update)]
-def update_pos(x: int; var y: int&; fig_type: int; rotation: int;
-               var time_till_move: float&; var active: bool&)
-    if !active
-        return
-    var yy = y
-    time_till_move -= delta_t * movement_speed
-    if time_till_move < 0.0
-        time_till_move = 1.0
-        yy--
-    if check_collision(x, yy, fig_type, rotation)
-        active = false
-    else
-        y = yy
+def patch_field(xx: int; yy: int; t: int; r: int; color: uint)
+    let border_checker <- @ <| [[&collides]] (i:int; j:int) : void
+        if (j >= 0) && (i >= 0) && (i < field_width) && (j < field_height)
+            field[i][j] = color
+    apply_per_figure_part(xx, yy, t, r, border_checker)
 
-[decs(stage=update, before=update_pos)]
-def controls(var y: int&; var x: int&; var rotation: int&; active: bool; fig_type: int)
-    if !active
-        return
-    var xt = x
-    var yt = y
-    var rt = rotation
+def update_pos()
+    active.time_till_move -= delta_t * movement_speed
+    if active.time_till_move < 0.0
+        active.time_till_move = 1.0
+        active.y++
+    if check_collision(active.x, active.y, active.fig_type, active.rotation)
+        active.y--
+        patch_field(active.x, active.y, active.fig_type, active.rotation, active.color)
+        create_figure()
+
+def update_controls()
+    var xt = active.x
+    var yt = active.y
+    var rt = active.rotation
     if leftPressed
         xt--
     if rightPressed
@@ -227,18 +241,25 @@ def controls(var y: int&; var x: int&; var rotation: int&; active: bool; fig_typ
     if upPressed
         rt = (rt + 1) % 4
     if downPressed
-        yt--
-    if !check_collision(xt, yt, fig_type, rt)
-        x = xt
-        y = yt
-        rotation = rt
+        yt++
+    if !check_collision(xt, yt, active.fig_type, rt)
+        active.x = xt
+        active.y = yt
+        active.rotation = rt
 
-def add_new_if_needed()
-    var has_active = false
-    let t = find_query <| $(active : bool)
-        has_active ||= active
-    if !has_active
-        create_figure()
+def check_lines()
+    for i in range(field_height)
+        var to_remove = true
+        for j in range(field_width)
+            if field[j][i] == 0u
+                to_remove = false
+        if to_remove
+            // todo: one loop
+            var l = i
+            while l > 0
+                for j in range(field_width)
+                    field[j][l] = field[j][l - 1]
+                l--
 
 var pause = false
 
@@ -246,7 +267,6 @@ var pause = false
 def act(dt: float)
     delta_t = dt
     if get_key(VK_ESCAPE)
-        clear_all()
         schedule_quit_game()
     if get_key_down(VK_E)
         clear_all()
@@ -257,24 +277,21 @@ def act(dt: float)
     leftPressed = get_key_down(VK_LEFT)
     rightPressed = get_key_down(VK_RIGHT)
     if !pause
-        decs_stage("update")
-        add_new_if_needed()
+        check_lines()
+        update_controls()
+        update_pos()
     return
 
-[decs(stage=draw)]
-def draw_figures(fig_type: int; rotation: int; x:int; y: int; color: uint; next: bool)
-    if !next
-        draw_figure(x, y, fig_type, rotation, color)
+def draw_figure()
+    draw_figure(active.x, active.y, active.fig_type, active.rotation, active.color)
 
-[decs(stage=draw_next)]
-def draw_figure_next(fig_type: int; rotation: int; x:int; y: int; color: uint; next: bool)
-    if next
-        draw_figure(1, 1, fig_type, rotation, color, next_field_pos_x, next_field_pos_y)
+def draw_figure_next()
+    draw_figure(1, 1, next.fig_type, next.rotation, next.color, next_field_pos_x, next_field_pos_y)
 
 [export]
 def draw
-    draw_field(field_pos_x, field_pos_y, field_width, field_height)
-    decs_stage("draw")
-    draw_field(next_field_pos_x, next_field_pos_y, next_field_width, next_field_height)
-    decs_stage("draw_next")
+    draw_field()
+    draw_figure()
+    draw_field(false)
+    draw_figure_next()
     return
