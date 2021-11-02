@@ -1,22 +1,47 @@
 require daslib/media
 require graphics
 require dasbox
-options debugger            // uncomment for debug in VS Code
-require daslib/debug        // uncomment for debug in VS Code
+// options debugger            // uncomment for debug in VS Code
+// require daslib/debug        // uncomment for debug in VS Code
 
-
-// 'initialize' runs once when game starts and every hot-reload
+let figures <- [{ auto
+ [{auto
+    [{int 1; 1; 1; 1}]
+ }];
+ [{auto
+    [{int 1; 0; 0}]; [{int 1; 1; 1}]
+ }];
+ [{auto
+    [{int 0; 0; 1}]; [{int 1; 1; 1}]
+ }];
+ [{auto
+    [{int 1; 1}]; [{int 1; 1}]
+ }];
+ [{auto
+    [{int 0; 1; 1}]; [{int 1; 1; 0}]
+ }];
+ [{auto
+    [{int 0; 1; 0}]; [{int 1; 1; 1}]
+ }];
+ [{auto
+    [{int 1; 1; 0}]; [{int 0; 1; 1}]
+ }]
+}]
 [export]
 def initialize
     set_window_title("Tetris")
     return
 
-// this function is called to update game data,
-// dt - time elapsed since the previous update (in seconds)
+var rot = 0
+
 [export]
 def act(dt: float)
     if get_key(VK_ESCAPE)
         schedule_quit_game()
+    if get_key_down(VK_UP)
+        rot = (rot + 1) % 4
+    if get_key_down(VK_DOWN)
+        rot = 0
     return
 
 def draw_smooth_quad_frame(x: int; y: int; size: int; r: int; color: uint)
@@ -43,28 +68,67 @@ def draw_quad_with_border(x: int; y: int; size: int; r: int; color: uint;
     draw_smooth_quad_frame(x, y, size, r, border_color)
     draw_smooth_quad(x + border, y + border, size - 2 * border, r - border, color)
 
-let background_color = 0x1F1F1F1F
-let quad_color = 0x2F2F2F2F
+let background_color = 0xFF2F2F2F
+let cell_border_color = 0xFF179797
 let r = 5
 let quad_size = 30
-let offset = 1
+let offset = 2
+let field_pos_x = 10
+let field_pos_y = 10
 
-def draw_field(x: int; y: int; count_x: int; count_y: int)
+def compute_border_color(c: uint)
+    var result = c & (0xFF << 24u)
+    for i in range(3)
+        let k = (0xFF << (8u*uint(i)))
+        result |= ((c & k) / 2u) & k
+    return result
+
+def draw_field(count_x: int; count_y: int)
     let sz_x = quad_size * count_x + offset * (count_x + 1)
     let sz_y = quad_size * count_y + offset * (count_y + 1)
-    fill_rect(x, y, sz_x, sz_y, background_color)
+    fill_rect(field_pos_x, field_pos_y, sz_x, sz_y, background_color)
     for i in range(count_x)
         for j in range(count_y)
-            draw_quad_with_border(x + offset + i * (offset + quad_size),
-                                  y + offset + j * (offset + quad_size),
-                                  quad_size, r, quad_color, offset,
-                                  background_color)
+            draw_quad_with_border(field_pos_x + offset + i * (offset + quad_size),
+                                  field_pos_y + offset + j * (offset + quad_size),
+                                  quad_size, r, background_color, offset,
+                                  cell_border_color)
+                                //   compute_border_color(background_color))
 
-// this function will be called every frame after 'act',
-// you can draw anything in this function
+def draw_figure(x: int; y: int; fig_id: int; rotation: int; color: uint)
+    let f := figures[fig_id] 
+    let x_l = length(f)
+    let y_l = length(f[0])
+    for k in range(x_l)
+        for l in range(y_l)
+            let val = f[k][l]
+            var i = k
+            var j = l
+            var xx = x_l
+            var yy = y_l
+
+            if rotation == 1
+                swap(i, j)
+                swap(xx, yy)
+                i = xx - 1 - i
+            if rotation == 2
+                i = xx - 1 - i
+                j = yy - 1 - j
+            if rotation == 3
+                swap(i, j)
+                swap(xx, yy)
+                j = yy - 1 - j
+
+            i += x
+            j += y
+            if val == 1
+                draw_quad_with_border(field_pos_x + offset + i * (offset + quad_size),
+                                    field_pos_y + offset + j * (offset + quad_size),
+                                    quad_size, r, color, offset,
+                                    compute_border_color(color))
+
 [export]
 def draw
-    // draw_smooth_quad(100, 100, 100, 10, 0xFFFFFFFF)
-    // draw_quad_with_border(100, 100, 100, 10, 0x000000FF, 5, 0x0000FF00)
-    draw_field(10, 10, 10, 20)
+    draw_field(10, 20)
+    draw_figure(0, 0, 0, rot, 0xFF00FF00)
     return
