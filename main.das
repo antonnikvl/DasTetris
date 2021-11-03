@@ -2,8 +2,6 @@ require daslib/media
 require graphics
 require dasbox
 require daslib/decs_boost
-// options debugger            // uncomment for debug in VS Code
-// require daslib/debug        // uncomment for debug in VS Code
 
 let figures <- [{ auto
  [{auto
@@ -29,11 +27,7 @@ let figures <- [{ auto
  }]
 }]
 
-// let colors = [[ uint[] 0x00CFFA; 0xFF0038; 0xFFCE38; 0xF0810F; 0xE6DF44;
-// 0x063852; 0xFDFF6; 0x67BACA; 0xAF1C1C; 0x20948B; 0xED8C72]]
 let colors = [[ uint[] 0xFF0000; 0x00FF00; 0x0000FF; 0xFFFF00; 0x00FFFF; 0xFF00FF; 0xFFFFFF]]
-
-// helpers start
 
 def draw_smooth_rect_frame(x: int; y: int; w: int; h: int; r: int; color: uint)
     for i in range(2)
@@ -64,7 +58,7 @@ def print_message_centered(x: int; y: int; text: string; text_color: uint; backg
     set_font_size(font_size)
     let sz = get_text_size(text)
     var szi = int2(sz)
-    draw_smooth_rect(x - szi.x * 5 / 8, y - szi.y / 2, szi.x * 5 / 4, szi.y, r, background_color)
+    draw_smooth_rect(x - szi.x / 2 - 5, y - szi.y / 2 - 5, szi.x + 10, szi.y + 10, r, background_color)
     text_out(x - szi.x / 2, y - szi.y / 2, text, text_color)
     set_font_size(cur_text_sz)
 
@@ -86,24 +80,23 @@ def draw_slider(x: int; y: int; w: int; h: int; cur: int; total: int; filled_col
     if h * cur / total > 0 
         draw_smooth_rect(x - w / 2, y + h / 2 - h * cur / total, w, h * cur / total, r, filled_color)
 
-// helpers end
-
 let background_color = 0xFF2F2F2F
 let cell_border_color = 0xFF179797
-let r = 5
+let text_color = 0xFFFFFFFF
+let back_color = 0xFF111111
+let cell_r = 5
 let quad_size = 35
 let offset = 2
 let field_pos_x = 10
 let field_pos_y = 25
 let field_height = 23
 let field_width = 10
-
 let next_field_pos_x = 400
 let next_field_pos_y = 25
 let next_field_height = 5
 let next_field_width = 5
-
 let ability_score_max = 10
+let ability_count_max = 5
 let base_movement_speed = 4.0
 
 var field: array<array<uint>>
@@ -139,7 +132,7 @@ def draw_field(main: bool = true)
                 border_color = compute_border_color(quad_color)
             draw_quad_with_border(x + offset + i * (offset + quad_size),
                                   y + offset + j * (offset + quad_size),
-                                  quad_size, r, quad_color, offset,
+                                  quad_size, cell_r, quad_color, offset,
                                   border_color)
 
 def apply_per_figure_part(x: int; y: int; fig_type: int; rot: int;
@@ -178,7 +171,7 @@ def draw_figure(x: int; y: int; fig_id: int; rotation: int; color: uint;
         if j < field_height
             draw_quad_with_border(field_x + offset + i * (offset + quad_size),
                             field_y + offset + j * (offset + quad_size),
-                            quad_size, r, color, offset,
+                            quad_size, cell_r, color, offset,
                             compute_border_color(color))
     apply_per_figure_part(x, y, fig_id, rotation, renderer)
 
@@ -188,7 +181,7 @@ var upPressed = false
 var rightPressed = false
 var leftPressed = false
 var delta_t = 0.0
-var seed = random_seed(42)
+var seed = random_seed(int(ref_time_ticks() & int64(0xFFFFFFF)))
 
 struct Figure 
     fig_type: int
@@ -207,6 +200,7 @@ var pause = false
 var manual = true
 var finished = false
 var first_time = true
+var ability_count = 0
 
 def make_figure()
     swap(active, next)
@@ -241,6 +235,7 @@ def initialize
         for j in range(field_height)
             push(v, 0u)
         emplace(field, v)
+    decs_stage("clear_background")
     return
 
 def clear_all()
@@ -251,7 +246,8 @@ def clear_all()
     create_figure()
     score = 0
     ability_score = 0
-    decs_stage("draw_background")
+    ability_count = 0
+    decs_stage("clear_background")
 
 def check_collision(xx: int; yy: int; t: int; r: int)
     var collides = false
@@ -316,7 +312,10 @@ def check_lines()
         last_line = i
         i--
     score += score_delta
-    ability_score = min(ability_score + score_delta * int(sqrt(float(score_delta))), ability_score_max)
+    ability_score = ability_score + score_delta * int(sqrt(float(score_delta)))
+    if ability_score >= ability_score_max
+        ability_count = min(ability_count + 1, ability_count_max)
+        ability_score = 0
     for i in range(length(lines))
         for j in range(field_width)
             field[j][field_height - 1 - i] = field[j][lines[i]]
@@ -326,8 +325,8 @@ def check_lines()
             field[j][i] = 0u
 
 def remove_line()
-    if ability_score == ability_score_max
-        ability_score = 0
+    if ability_count > 0
+        ability_count--
         var l = field_height - 1
         while l > 0
             for j in range(field_width)
@@ -343,56 +342,20 @@ def check_lost()
     return false
 
 def skip_figure()
-    if ability_score == ability_score_max
+    if ability_count > 0
         create_figure()
-        ability_score = 0
+        ability_count--
 
 def slowdown_time()
-    if ability_score == ability_score_max
+    if ability_count > 0
         slowdown_left = 10.0
-        ability_score = 0
+        ability_count--
 
 def update_speed()
     slowdown_left -= delta_t
     movement_speed = base_movement_speed
     if slowdown_left > 0.0
         movement_speed = base_movement_speed / 3.0
-
-[export]
-def act(dt: float)
-    delta_t = dt
-    spawn_balls()
-    decs_stage("update_background")
-    if get_key(VK_ESCAPE)
-        schedule_quit_game()
-    let pPressed = get_key_down(VK_P)
-    downPressed = get_key_down(VK_DOWN)
-    upPressed = get_key_down(VK_UP)
-    leftPressed = get_key_down(VK_LEFT)
-    rightPressed = get_key_down(VK_RIGHT)
-    if get_key_down(VK_E)
-        decs_stage("clear_background")
-    if get_key_down(VK_D)
-        skip_figure()
-    if get_key_down(VK_S)
-        slowdown_time()
-    if get_key_down(VK_R)
-        remove_line()
-    if !finished && !manual
-        if pPressed
-            pause = !pause
-        if !pause
-            update_speed()
-            check_lines()
-            update_controls()
-            update_pos()
-    else
-        if downPressed || upPressed || leftPressed || rightPressed || pPressed
-            if finished
-                finished = false
-                clear_all()
-            if manual
-                manual = false
 
 def draw_figure()
     draw_figure(active.x, active.y, active.fig_type, active.rotation, active.color)
@@ -448,12 +411,47 @@ def spawn_balls()
     var count = 0
     query <| $ (position: float2)
         count++
-    if count < 100
+    while count < 100
         random_ball()
+        count++
 
 [decs(stage=clear_background)]
 def clear_balls(eid:EntityId; size: float; position: float2; color: uint)
     delete_entity(eid)
+
+[export]
+def act(dt: float)
+    delta_t = dt
+    spawn_balls()
+    decs_stage("update_background")
+    if get_key(VK_ESCAPE)
+        schedule_quit_game()
+    let pPressed = get_key_down(VK_P)
+    downPressed = get_key_down(VK_DOWN)
+    upPressed = get_key_down(VK_UP)
+    leftPressed = get_key_down(VK_LEFT)
+    rightPressed = get_key_down(VK_RIGHT)
+    if get_key_down(VK_D)
+        skip_figure()
+    if get_key_down(VK_S)
+        slowdown_time()
+    if get_key_down(VK_R)
+        remove_line()
+    if !finished && !manual
+        if pPressed
+            pause = !pause
+        if !pause
+            update_speed()
+            check_lines()
+            update_controls()
+            update_pos()
+    else
+        if downPressed || upPressed || leftPressed || rightPressed || pPressed
+            if finished
+                finished = false
+                clear_all()
+            if manual
+                manual = false
 
 [export]
 def draw
@@ -467,34 +465,40 @@ def draw
         draw_field(false)
         draw_figure_next()
         print_message_centered(next_field_pos_x + 93, next_field_pos_y + 250,
-                                 "Score: {score}", 0xFFFFFFFF, background_color, 30)
-        draw_slider(next_field_pos_x + 93, next_field_pos_y + 570, 100, 500,
-                    ability_score, ability_score_max, 0xFFFFFFFF, background_color, 4)
+                                 "Score: {score}", text_color, background_color, 30)
+        draw_slider(next_field_pos_x + 70, next_field_pos_y + 570, 100, 500,
+                    ability_score, ability_score_max, text_color, background_color, 4)
+        for i in range(ability_count_max)
+            fill_circle(next_field_pos_x + 155, next_field_pos_y + 350 + i * 100, 20, background_color)
+            if i < ability_count
+                fill_circle(next_field_pos_x + 155, next_field_pos_y + 350 + i * 100, 15, text_color)
         if pause
             enable_alpha_blend()
-            print_message_screen_centered("PAUSE", 0xFFFFFFFF, 0xDD111111)
+            print_message_screen_centered("PAUSE", text_color, back_color)
             disable_alpha_blend()
         if finished
-            print_message_screen_centered("GAME OVER\nSCORE: {score}", 0xFFFFFFFF, 0xFF111111, 70)
+            print_message_screen_centered("GAME OVER\nSCORE: {score}", text_color, back_color, 70)
     else
         enable_alpha_blend()
         print_message_screen_centered(
 "MANUAL:
--Figures can be moved 
- with left and right arrows
--Rotation is done with up arrow key
--To move figure down faster press down arrow
--Pause or restart after lost
- game is done with P key
--Ability slider is filled
- when lines are destroyed
- (the more lines are destroyed with one
- figure, the faster slider is filled)
--When ability slider is filled you can 
- use one of three abillities:
-   1) Remove bottom line (R)
-   2) Slow down time for 10 second (S)
-   3) Destroy currently falling figure (D)
--Press any of described above keys
- to skip this message", 0xFFFFFFFF, 0xFF111111, 20, 30)
+-Figures can be moved with left and right
+  arrows
+-Rotation is done with up arrow
+-To drop figure faster press down arrow
+  (each time it moves one cell downwards)
+-Pause or restart after lost game is done
+  with P key
+-Bonus scale on right is filled when lines
+  are destroyed (the more lines are destroyed
+  with one figure, the faster scale is filled)
+-Each filled scale gives one bonus point
+-Number of available bonus points is shown
+  with with dots on right to bonus scale
+  (with maximum {ability_count_max} in total)
+-You can use one of three bonuses:
+   1) Remove bottom line (R key)
+   2) Slow down time for 10 seconds (S key)
+   3) Destroy current figure (D key)
+-Press P to skip this message", text_color, back_color, 20, 30)
         disable_alpha_blend()
