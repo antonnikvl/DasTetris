@@ -168,7 +168,7 @@ def apply_per_figure_part(x: int; y: int; fig_type: int; rot: int;
 def draw_figure(x: int; y: int; fig_id: int; rotation: int; color: uint;
                 field_x: int = field_pos_x; field_y: int = field_pos_y)
     let renderer <- @ <| (i:int; j:int) : void
-        if j < field_height
+        if j < field_height && j >= 0
             draw_quad_with_border(field_x + offset + i * (offset + quad_size),
                             field_y + offset + j * (offset + quad_size),
                             quad_size, cell_r, color, offset,
