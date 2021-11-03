@@ -8,6 +8,6 @@ Tetris in daScript
 * Launch: dasbox.exe main.das
 * dasbox.exe is taken from releases at https://github.com/imp5imp5/dasbox
 * Video sample: https://drive.google.com/file/d/1JmBX2PxPWENIgqjc99j7uYmhp1Ffs46w/view?usp=sharing Timecodes:
-  1) Line removal bonus: 5:45
-  2) Figure destroy bonus: 4:20
-  3) Slowdown bonus: 5:20 - 5:35 (for quad figure down arrow was pressed several times, resulting in faster movement, so see next figure, until slowdown ends) 
+1) Line removal bonus: 5:45
+2) Figure destroy bonus: 4:20
+3) Slowdown bonus: 5:20 - 5:35 (for quad figure down arrow was pressed several times, resulting in faster movement, so see next figure, until slowdown ends) 
