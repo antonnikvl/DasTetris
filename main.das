@@ -1,6 +1,7 @@
 require daslib/media
 require graphics
 require dasbox
+require daslib/decs_boost
 // options debugger            // uncomment for debug in VS Code
 // require daslib/debug        // uncomment for debug in VS Code
 
@@ -72,34 +73,34 @@ def print_message_screen_centered(text: string; text_color: uint; background_col
     set_font_size(font_size)
     let sz = get_text_size(text)
     var szi = int2(sz)
-    draw_smooth_rect(w / 2 - szi.x * 5 / 8, h / 2 - szi.y / 2, szi.x * 5 / 4, szi.y, r, background_color)
+    draw_smooth_rect(w / 2 - szi.x / 2 - 20, h / 2 - szi.y / 2 - 20, szi.x + 40, szi.y +40, r, background_color)
     text_out(w / 2 - szi.x / 2, h / 2 - szi.y / 2, text, text_color)
     set_font_size(cur_text_sz)
 
 def draw_slider(x: int; y: int; w: int; h: int; cur: int; total: int; filled_color: uint; background_color : uint; r: int)
     draw_smooth_rect(x - w / 2, y - h / 2, w, h, r, background_color)
-    if w * cur / total > 0 
-        draw_smooth_rect(x - w / 2, y - h / 2, w * cur / total, h, r, filled_color)
+    if h * cur / total > 0 
+        draw_smooth_rect(x - w / 2, y + h / 2 - h * cur / total, w, h * cur / total, r, filled_color)
 
 // helpers end
 
 let background_color = 0xFF2F2F2F
 let cell_border_color = 0xFF179797
 let r = 5
-let quad_size = 30
+let quad_size = 35
 let offset = 2
 let field_pos_x = 10
-let field_pos_y = 10
-let field_height = 20
+let field_pos_y = 25
+let field_height = 23
 let field_width = 10
 
 let next_field_pos_x = 400
-let next_field_pos_y = 10
+let next_field_pos_y = 25
 let next_field_height = 5
 let next_field_width = 5
 
 let ability_score_max = 20
-let base_movement_speed = 10.0
+let base_movement_speed = 6.0
 
 var field: array<array<uint>>
 
@@ -124,7 +125,7 @@ def draw_field(main: bool = true)
         y = next_field_pos_y
     let sz_x = quad_size * w + offset * (w + 1)
     let sz_y = quad_size * h + offset * (h + 1)
-    fill_rect(x, y, sz_x, sz_y, background_color)
+    draw_smooth_rect(x, y, sz_x, sz_y, 4, background_color)
     for i in range(w)
         for j in range(h)
             var border_color = cell_border_color
@@ -194,20 +195,19 @@ struct Figure
     time_till_move: float
 
 var slowdown_left = 0.0
-var movement_speed = 10.0
+var movement_speed = 6.0
 var active, next: Figure
 var score = 0
 var ability_score = 0
 var pause = false
-var manual = false
+var manual = true
 var finished = false
 var first_time = true
 
-
 def make_figure()
     swap(active, next)
-    next.fig_type = 0//random_int(seed) % length(figures)
-    next.rotation = 1//random_int(seed) % 4
+    next.fig_type = random_int(seed) % length(figures)
+    next.rotation = random_int(seed) % 4
     let sz_x = length(figures[next.fig_type])
     let sz_y = length(figures[next.fig_type][0])
     var sz = sz_x
@@ -231,6 +231,7 @@ def create_figure()
 [export]
 def initialize
     set_window_title("Tetris")
+    set_resolution(600, 900)
     create_figure()
     for i in range(field_width)
         var v: array<uint>
@@ -247,6 +248,7 @@ def clear_all()
     create_figure()
     score = 0
     ability_score = 0
+    decs_stage("draw_background")
 
 def check_collision(xx: int; yy: int; t: int; r: int)
     var collides = false
@@ -356,6 +358,8 @@ def update_speed()
 [export]
 def act(dt: float)
     delta_t = dt
+    spawn_balls()
+    decs_stage("update_background")
     if get_key(VK_ESCAPE)
         schedule_quit_game()
     let pPressed = get_key_down(VK_P)
@@ -363,6 +367,8 @@ def act(dt: float)
     upPressed = get_key_down(VK_UP)
     leftPressed = get_key_down(VK_LEFT)
     rightPressed = get_key_down(VK_RIGHT)
+    if get_key_down(VK_E)
+        decs_stage("clear_background")
     if get_key_down(VK_D)
         skip_figure()
     if get_key_down(VK_S)
@@ -391,32 +397,101 @@ def draw_figure()
 def draw_figure_next()
     draw_figure(1, 1, next.fig_type, next.rotation, next.color, next_field_pos_x, next_field_pos_y)
 
+[decs_template]
+struct Ball
+    size: float
+    position: float2
+    speed: float2
+    color: uint
+
+def random_ball()
+    create_entity <| @ (eid, cmp)
+        cmp |> set ( "eid", eid)
+        cmp |> set ( "size", 10.0)
+        cmp |> set ("position", float2(random_float(seed), random_float(seed))
+                                *float2(get_screen_width(), get_screen_height()))
+        var speed = float2(random_float(seed), random_float(seed))*200.0 - float2(100.0)
+        while length(speed) < 50.0
+            speed = float2(random_float(seed), random_float(seed))*200.0 - float2(100.0)
+        cmp |> set ("speed", speed)
+        var color = 0xFF00000
+        color |= (uint(random_int(seed)) & 0xFF) << 0u;
+        color |= (uint(random_int(seed)) & 0xFF) << 8u;
+        color |= (uint(random_int(seed)) & 0xFF) << 16u;
+        cmp |> set ("color", color)
+        apply_decs_template(cmp, [[Ball]])
+
+[decs(stage=update_background)]
+def update_balls(var position: float2&; var speed: float2&; size: float)
+    position += speed * delta_t
+    if position.x - size < 0.0
+        position.x = size
+        speed.x = -speed.x
+    if position.y - size < 0.0
+        position.y = size
+        speed.y = -speed.y
+    if position.x + size > float(get_screen_width())
+        position.x = float(get_screen_width()) - size
+        speed.x = -speed.x
+    if position.y + size > float(get_screen_height())
+        position.y = float(get_screen_height()) - size
+        speed.y = -speed.y
+
+[decs(stage=draw_background)]
+def draw_balls(size: float; position: float2; color: uint)
+    fill_circle(int(position.x), int(position.y), int(size), color)
+
+def spawn_balls()
+    var count = 0
+    query <| $ (position: float2)
+        count++
+    if count < 100
+        random_ball()
+
+[decs(stage=clear_background)]
+def clear_balls(eid:EntityId; size: float; position: float2; color: uint)
+    delete_entity(eid)
+
 [export]
 def draw
+    decs_stage("draw_background")
+    enable_alpha_blend()
+    fill_rect(0, 0, get_screen_width(), get_screen_height(), 0xAA111111)
+    disable_alpha_blend()
     if !manual
         draw_field()
         draw_figure()
         draw_field(false)
         draw_figure_next()
-        print_message_centered(next_field_pos_x + 80, next_field_pos_y + 200,
+        print_message_centered(next_field_pos_x + 93, next_field_pos_y + 250,
                                  "Score: {score}", 0xFFFFFFFF, background_color, 30)
-        draw_slider(next_field_pos_x + 80, next_field_pos_y + 300, 180, 40,
+        draw_slider(next_field_pos_x + 93, next_field_pos_y + 570, 100, 500,
                     ability_score, ability_score_max, 0xFFFFFFFF, background_color, 4)
         if pause
-            print_message_screen_centered("PAUSE", 0xFFFFFFFF, 0xFF111111)
+            enable_alpha_blend()
+            print_message_screen_centered("PAUSE", 0xFFFFFFFF, 0xDD111111)
+            disable_alpha_blend()
         if finished
-            print_message_screen_centered("GAME OVER\nSCORE: {score}", 0xFFFFFFFF, 0xFF111111)
+            print_message_screen_centered("GAME OVER\nSCORE: {score}", 0xFFFFFFFF, 0xFF111111, 70)
     else
-        print_message_screen_centered("MANUAL:
--Figures can be moved with left and right arrows
+        enable_alpha_blend()
+        print_message_screen_centered(
+"MANUAL:
+-Figures can be moved 
+ with left and right arrows
 -Rotation is done with up arrow key
 -To move figure down faster press down arrow
--Pause or restart after lost game is done with P key
--Ability slider is filled when lines are destroyed
-(the more lines are destroyed with one figure, the faster
-slider is filled)
--When ability slider is filled you can use one of three abillities:
-    1) Remove bottom line (R)
-    2) Slow down time for 10 second (S)
-    3) Destroy currently falling figure (D)
--Press any of described above keys to skip this message", 0xFFFFFFFF, 0xFF111111, 25, 30)
+-Pause or restart after lost
+ game is done with P key
+-Ability slider is filled
+ when lines are destroyed
+ (the more lines are destroyed with one
+ figure, the faster slider is filled)
+-When ability slider is filled you can 
+ use one of three abillities:
+   1) Remove bottom line (R)
+   2) Slow down time for 10 second (S)
+   3) Destroy currently falling figure (D)
+-Press any of described above keys
+ to skip this message", 0xFFFFFFFF, 0xFF111111, 20, 30)
+        disable_alpha_blend()
