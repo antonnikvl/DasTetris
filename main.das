@@ -30,29 +30,58 @@ let figures <- [{ auto
 
 // helpers start
 
-def draw_smooth_quad_frame(x: int; y: int; size: int; r: int; color: uint)
+def draw_smooth_rect_frame(x: int; y: int; w: int; h: int; r: int; color: uint)
     for i in range(2)
         for j in range(2)
-            let corner_x = x + size * i + r - 2 * r * i
-            let corner_y = y + size * j + r - 2 * r * j
+            let corner_x = x + w * i + r - 2 * r * i
+            let corner_y = y + h * j + r - 2 * r * j
             fill_circle(corner_x, corner_y, r, color)
     // fill x
-    fill_rect(x + r, y, size - 2 * r, r, color)
-    fill_rect(x + r, y + size - r, size - 2 * r, r, color)
+    fill_rect(x + r, y, w - 2 * r, r, color)
+    fill_rect(x + r, y + h - r, w - 2 * r, r, color)
     // fill y
-    fill_rect(x, y +r , r, size - 2 * r, color)
-    fill_rect(x + size - r, y + r, r, size - 2 * r, color)
+    fill_rect(x, y + r , r, h - 2 * r, color)
+    fill_rect(x + w - r, y + r, r, h - 2 * r, color)
 
-def draw_smooth_quad(x: int; y: int; size: int; r: int; color: uint)
-    draw_smooth_quad_frame(x, y, size, r, color)
+def draw_smooth_rect(x: int; y: int; w: int; h: int; r: int; color: uint)
+    draw_smooth_rect_frame(x, y, w, h, r, color)
     // fill inside
-    fill_rect(x + r, y + r, size - 2 * r, size - 2 * r, color)
+    fill_rect(x + r, y + r, w - 2 * r, h - 2 * r, color)
 
 def draw_quad_with_border(x: int; y: int; size: int; r: int; color: uint;
                          border: int; border_color: uint)
     assert(border < r, "Border should be less then radius")
-    draw_smooth_quad_frame(x, y, size, r, border_color)
-    draw_smooth_quad(x + border, y + border, size - 2 * border, r - border, color)
+    draw_smooth_rect_frame(x, y, size, size, r, border_color)
+    draw_smooth_rect(x + border, y + border, size - 2 * border, size - 2 * border, r - border, color)
+
+def print_message_centered(x: int; y: int; text: string; text_color: uint; background_color : uint; font_size: int; r: int = 10)
+    let cur_text_sz = get_current_font_size()
+    set_font_size(font_size)
+    let sz = get_text_size(text)
+    var szi = int2(sz)
+    draw_smooth_rect(x - szi.x * 5 / 8, y - szi.y / 2, szi.x * 5 / 4, szi.y, r, background_color)
+    text_out(x - szi.x / 2, y - szi.y / 2, text, text_color)
+    set_font_size(cur_text_sz)
+
+def print_message_screen_centered(text: string; text_color: uint; background_color : uint; var font_size: int = -1; r: int = 10)
+    let w = get_screen_width()
+    let h = get_screen_height()
+    let cur_text_sz = get_current_font_size()
+    if font_size == -1
+        font_size = h / 10
+    set_font_size(font_size)
+    let sz = get_text_size(text)
+    var szi = int2(sz)
+    draw_smooth_rect(w / 2 - szi.x * 5 / 8, h / 2 - szi.y / 2, szi.x * 5 / 4, szi.y, r, background_color)
+    text_out(w / 2 - szi.x / 2, h / 2 - szi.y / 2, text, text_color)
+    set_font_size(cur_text_sz)
+
+def draw_slider(x: int; y: int; w: int; h: int; cur: int; total: int; filled_color: uint; background_color : uint; r: int)
+    draw_smooth_rect(x - w / 2, y - h / 2, w, h, r, background_color)
+    if w * cur / total > 0 
+        draw_smooth_rect(x - w / 2, y - h / 2, w * cur / total, h, r, filled_color)
+
+// helpers end
 
 let background_color = 0xFF2F2F2F
 let cell_border_color = 0xFF179797
@@ -68,6 +97,9 @@ let next_field_pos_x = 400
 let next_field_pos_y = 10
 let next_field_height = 5
 let next_field_width = 5
+
+let ability_score_max = 20
+let base_movement_speed = 10.0
 
 var field: array<array<uint>>
 
@@ -104,7 +136,6 @@ def draw_field(main: bool = true)
                                   y + offset + j * (offset + quad_size),
                                   quad_size, r, quad_color, offset,
                                   border_color)
-                                //   compute_border_color(background_color))
 
 def apply_per_figure_part(x: int; y: int; fig_type: int; rot: int;
                           func: lambda<(xp: int; yp: int):void>)
@@ -146,14 +177,12 @@ def draw_figure(x: int; y: int; fig_id: int; rotation: int; color: uint;
                             compute_border_color(color))
     apply_per_figure_part(x, y, fig_id, rotation, renderer)
 
-var movement_speed = 10.0
-var delta_t = 0.0
 
 var downPressed = false
 var upPressed = false
 var rightPressed = false
 var leftPressed = false
-
+var delta_t = 0.0
 var seed = random_seed(42)
 
 struct Figure 
@@ -164,14 +193,27 @@ struct Figure
     color: uint
     time_till_move: float
 
+var slowdown_left = 0.0
+var movement_speed = 10.0
 var active, next: Figure
-var first_time = true;
+var score = 0
+var ability_score = 0
+var pause = false
+var manual = false
+var finished = false
+var first_time = true
+
 
 def make_figure()
     swap(active, next)
-    next.fig_type = random_int(seed) % length(figures)
-    next.rotation = random_int(seed) % 4
-    next.x = random_int(seed) % 7
+    next.fig_type = 0//random_int(seed) % length(figures)
+    next.rotation = 1//random_int(seed) % 4
+    let sz_x = length(figures[next.fig_type])
+    let sz_y = length(figures[next.fig_type][0])
+    var sz = sz_x
+    if next.rotation % 2 == 1
+        sz = sz_y
+    next.x = random_int(seed) % (field_width - sz + 1)
     next.y = 0
     next.color = 0xFF00000
     next.color |= (uint(random_int(seed)) & 0xFF) << 0u;
@@ -203,6 +245,8 @@ def clear_all()
             field[i][j] = 0u
     first_time = true
     create_figure()
+    score = 0
+    ability_score = 0
 
 def check_collision(xx: int; yy: int; t: int; r: int)
     var collides = false
@@ -228,7 +272,9 @@ def update_pos()
     if check_collision(active.x, active.y, active.fig_type, active.rotation)
         active.y--
         patch_field(active.x, active.y, active.fig_type, active.rotation, active.color)
-        create_figure()
+        finished = check_lost()
+        if !finished
+            create_figure()
 
 def update_controls()
     var xt = active.x
@@ -248,39 +294,96 @@ def update_controls()
         active.rotation = rt
 
 def check_lines()
-    for i in range(field_height)
+    var lines: array<int>
+    var last_line = -1
+    var i = field_height - 1
+    var score_delta = 0
+    while i >= 0
         var to_remove = true
         for j in range(field_width)
             if field[j][i] == 0u
                 to_remove = false
-        if to_remove
-            // todo: one loop
-            var l = i
-            while l > 0
-                for j in range(field_width)
-                    field[j][l] = field[j][l - 1]
-                l--
+        if to_remove  
+            i--
+            score_delta++
+            continue
+        push(lines, i)
+        last_line = i
+        i--
+    score += score_delta
+    ability_score = min(ability_score + score_delta * int(sqrt(float(score_delta))), ability_score_max)
+    for i in range(length(lines))
+        for j in range(field_width)
+            field[j][field_height - 1 - i] = field[j][lines[i]]
+    i = last_line - 1
+    while i >= 0
+        for j in range(field_width)
+            field[j][i] = 0u
 
-var pause = false
+def remove_line()
+    if ability_score == ability_score_max
+        ability_score = 0
+        var l = field_height - 1
+        while l > 0
+            for j in range(field_width)
+                field[j][l] = field[j][l - 1]
+            l--
+        for j in range(field_width)
+            field[j][0] = 0u
+
+def check_lost()
+    for i in range(field_width)
+        if field[i][0] != 0u
+            return true
+    return false
+
+def skip_figure()
+    if ability_score == ability_score_max
+        create_figure()
+        ability_score = 0
+
+def slowdown_time()
+    if ability_score == ability_score_max
+        slowdown_left = 10.0
+        ability_score = 0
+
+def update_speed()
+    slowdown_left -= delta_t
+    movement_speed = base_movement_speed
+    if slowdown_left > 0.0
+        movement_speed = base_movement_speed / 3.0
 
 [export]
 def act(dt: float)
     delta_t = dt
     if get_key(VK_ESCAPE)
         schedule_quit_game()
-    if get_key_down(VK_E)
-        clear_all()
-    if get_key_down(VK_P)
-        pause = !pause
+    let pPressed = get_key_down(VK_P)
     downPressed = get_key_down(VK_DOWN)
     upPressed = get_key_down(VK_UP)
     leftPressed = get_key_down(VK_LEFT)
     rightPressed = get_key_down(VK_RIGHT)
-    if !pause
-        check_lines()
-        update_controls()
-        update_pos()
-    return
+    if get_key_down(VK_D)
+        skip_figure()
+    if get_key_down(VK_S)
+        slowdown_time()
+    if get_key_down(VK_R)
+        remove_line()
+    if !finished && !manual
+        if pPressed
+            pause = !pause
+        if !pause
+            update_speed()
+            check_lines()
+            update_controls()
+            update_pos()
+    else
+        if downPressed || upPressed || leftPressed || rightPressed || pPressed
+            if finished
+                finished = false
+                clear_all()
+            if manual
+                manual = false
 
 def draw_figure()
     draw_figure(active.x, active.y, active.fig_type, active.rotation, active.color)
@@ -290,8 +393,30 @@ def draw_figure_next()
 
 [export]
 def draw
-    draw_field()
-    draw_figure()
-    draw_field(false)
-    draw_figure_next()
-    return
+    if !manual
+        draw_field()
+        draw_figure()
+        draw_field(false)
+        draw_figure_next()
+        print_message_centered(next_field_pos_x + 80, next_field_pos_y + 200,
+                                 "Score: {score}", 0xFFFFFFFF, background_color, 30)
+        draw_slider(next_field_pos_x + 80, next_field_pos_y + 300, 180, 40,
+                    ability_score, ability_score_max, 0xFFFFFFFF, background_color, 4)
+        if pause
+            print_message_screen_centered("PAUSE", 0xFFFFFFFF, 0xFF111111)
+        if finished
+            print_message_screen_centered("GAME OVER\nSCORE: {score}", 0xFFFFFFFF, 0xFF111111)
+    else
+        print_message_screen_centered("MANUAL:
+-Figures can be moved with left and right arrows
+-Rotation is done with up arrow key
+-To move figure down faster press down arrow
+-Pause or restart after lost game is done with P key
+-Ability slider is filled when lines are destroyed
+(the more lines are destroyed with one figure, the faster
+slider is filled)
+-When ability slider is filled you can use one of three abillities:
+    1) Remove bottom line (R)
+    2) Slow down time for 10 second (S)
+    3) Destroy currently falling figure (D)
+-Press any of described above keys to skip this message", 0xFFFFFFFF, 0xFF111111, 25, 30)
