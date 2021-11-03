@@ -29,6 +29,10 @@ let figures <- [{ auto
  }]
 }]
 
+// let colors = [[ uint[] 0x00CFFA; 0xFF0038; 0xFFCE38; 0xF0810F; 0xE6DF44;
+// 0x063852; 0xFDFF6; 0x67BACA; 0xAF1C1C; 0x20948B; 0xED8C72]]
+let colors = [[ uint[] 0xFF0000; 0x00FF00; 0x0000FF; 0xFFFF00; 0x00FFFF; 0xFF00FF; 0xFFFFFF]]
+
 // helpers start
 
 def draw_smooth_rect_frame(x: int; y: int; w: int; h: int; r: int; color: uint)
@@ -99,8 +103,8 @@ let next_field_pos_y = 25
 let next_field_height = 5
 let next_field_width = 5
 
-let ability_score_max = 20
-let base_movement_speed = 6.0
+let ability_score_max = 10
+let base_movement_speed = 4.0
 
 var field: array<array<uint>>
 
@@ -195,7 +199,7 @@ struct Figure
     time_till_move: float
 
 var slowdown_left = 0.0
-var movement_speed = 6.0
+var movement_speed = 5.0
 var active, next: Figure
 var score = 0
 var ability_score = 0
@@ -215,10 +219,9 @@ def make_figure()
         sz = sz_y
     next.x = random_int(seed) % (field_width - sz + 1)
     next.y = 0
-    next.color = 0xFF00000
-    next.color |= (uint(random_int(seed)) & 0xFF) << 0u;
-    next.color |= (uint(random_int(seed)) & 0xFF) << 8u;
-    next.color |= (uint(random_int(seed)) & 0xFF) << 16u;
+    next.color = 0xFF000000
+    var color_id = random_int(seed) % length(colors)
+    next.color |= colors[color_id] & 0xFFFFFF
     next.time_till_move = 1.0
 
 def create_figure()
